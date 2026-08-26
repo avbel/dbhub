@@ -78,7 +78,7 @@ The [Claude Code Plugin](/claude-code-plugin) registers the DBHub MCP server in 
     docker run --rm --init \
       --name dbhub \
       --publish 8080:8080 \
-      avbel/dbhub \
+      andbel/dbhub \
       --transport http \
       --port 8080 \
       --dsn "postgres://user:password@localhost:5432/dbname?sslmode=disable"
@@ -87,7 +87,7 @@ The [Claude Code Plugin](/claude-code-plugin) registers the DBHub MCP server in 
     docker run --rm --init \
       --name dbhub \
       --publish 8080:8080 \
-      avbel/dbhub \
+      andbel/dbhub \
       --transport http \
       --port 8080 \
       --demo
@@ -108,7 +108,7 @@ The [Claude Code Plugin](/claude-code-plugin) registers the DBHub MCP server in 
     ```yaml docker-compose.yml
     services:
       dbhub:
-        image: avbel/dbhub:latest
+        image: andbel/dbhub:latest
         container_name: dbhub
         ports:
           - "8080:8080"
