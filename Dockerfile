@@ -1,7 +1,22 @@
 # ============================================================================
 # Builder Stage: Build application and prepare dependencies
 # ============================================================================
-FROM node:22-alpine AS builder
+#
+# Pinned to BUILDPLATFORM (the machine running the build), not TARGETPLATFORM.
+# Everything this stage produces — dist/*.js, dist/public/*, and the pure-JS
+# production node_modules — is platform-independent, so there is nothing to
+# gain by emulating it, and two things to lose:
+#
+#   1. Correctness. esbuild (which tsup drives) is a Go binary, and Go's
+#      lock-free stack packing assumes a 48-bit address space that QEMU's
+#      x86_64 user-mode emulation violates. Building linux/amd64 on an arm64
+#      host under QEMU dies with "runtime: lfstack.push invalid packing".
+#   2. Speed. A multi-arch build would otherwise run the whole pnpm install +
+#      build twice, once of them emulated.
+#
+# The production stage below stays on TARGETPLATFORM, so the runtime image is
+# a genuine image for the requested architecture.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 
 WORKDIR /app
 
