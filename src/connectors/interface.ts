@@ -1,7 +1,13 @@
 /**
  * Type definition for supported database connector types
  */
-export type ConnectorType = "postgres" | "mysql" | "mariadb" | "sqlite" | "sqlserver";
+export type ConnectorType =
+  | "postgres"
+  | "mysql"
+  | "mariadb"
+  | "sqlite"
+  | "sqlserver"
+  | "clickhouse";
 
 /**
  * Database Connector Interface

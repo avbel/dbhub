@@ -126,6 +126,7 @@ In read-only mode, DBHub enforces read-only access in two layers:
 
 - **PostgreSQL** — runs inside a `BEGIN READ ONLY` transaction
 - **SQLite** — runs with `PRAGMA query_only = ON`
+- **ClickHouse** — has no transactions, so the statement runs with the session setting `readonly = 2` (writes rejected by the engine; other settings, such as the query timeout, stay settable). When the connected user's own profile already pins `readonly`, DBHub leaves it alone — that profile is the stricter of the two
 - **MySQL / MariaDB** — runs inside a `START TRANSACTION READ ONLY`
 
 <Note>
@@ -133,7 +134,25 @@ Engine-level enforcement was added in **0.22.6**. Earlier versions relied on the
 </Note>
 
 <Warning>
-Read-only mode prevents data modification (DML/DDL), but it cannot constrain everything a **privileged database role** can do through *functions*. On PostgreSQL, a superuser or specially-privileged role can still read or write server files and run commands via `pg_read_file`, `lo_export`, `dblink`, and `COPY ... TO PROGRAM` — these are not blocked by a read-only transaction. On MySQL/MariaDB, DDL performs an implicit commit and is stopped only by the keyword classifier.
+<Note>
+  **Two ClickHouse specifics worth knowing.**
+
+  *Batches are not atomic.* ClickHouse has no transactions, so DBHub runs a
+  multi-statement batch one statement at a time. If statement 3 fails,
+  statements 1 and 2 have already applied — unlike PostgreSQL or MySQL, where
+  the batch runs inside a transaction. Send one statement at a time when
+  partial application would be a problem.
+
+  *Decimal precision under a pinned profile.* DBHub normally asks ClickHouse to
+  return `Decimal` as a JSON string so values survive intact. A user account
+  whose profile pins `readonly = 1` forbids changing **any** setting, so that
+  request cannot be sent and Decimals come back as JSON numbers, which can
+  round. If exact decimals matter, grant read-only access with `GRANT SELECT`
+  rather than a `readonly = 1` profile — DBHub then applies its own
+  `readonly = 2` backstop and keeps full precision.
+</Note>
+
+Read-only mode prevents data modification (DML/DDL), but it cannot constrain everything a **privileged database role** can do through *functions*. On PostgreSQL, a superuser or specially-privileged role can still read or write server files and run commands via `pg_read_file`, `lo_export`, `dblink`, and `COPY ... TO PROGRAM` — these are not blocked by a read-only transaction. On MySQL/MariaDB, DDL performs an implicit commit and is stopped only by the keyword classifier. On ClickHouse, `readonly = 2` does stop DDL as well as DML, but table functions that read outside the server's own tables (`file`, `url`, `s3`, `postgresql`, …) are not writes and so are not covered by it — the keyword classifier rejects those separately.
 
 For untrusted or agent-driven environments, **always connect DBHub with a least-privilege, read-only database user** scoped to the data it needs. Do not point a read-only tool at an admin/superuser DSN and rely on read-only mode alone.
 </Warning>

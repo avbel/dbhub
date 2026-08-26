@@ -194,3 +194,16 @@ describe("quoteQualifiedIdentifier", () => {
     });
   });
 });
+
+describe("ClickHouse identifier quoting", () => {
+  const dbType: ConnectorType = "clickhouse";
+
+  it("uses backticks", () => {
+    expect(quoteIdentifier("events", dbType)).toBe("`events`");
+    expect(quoteQualifiedIdentifier("events", "analytics", dbType)).toBe("`analytics`.`events`");
+  });
+
+  it("escapes an embedded backtick by doubling it", () => {
+    expect(quoteIdentifier("we`ird", dbType)).toBe("`we``ird`");
+  });
+});

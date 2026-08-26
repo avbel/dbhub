@@ -494,3 +494,87 @@ describe("isReadOnlySQL", () => {
     });
   });
 });
+
+describe("ClickHouse read-only classification", () => {
+  const clickhouse: ConnectorType = "clickhouse";
+
+  it.each([
+    "SELECT * FROM events",
+    "WITH recent AS (SELECT * FROM events) SELECT count() FROM recent",
+    "SHOW TABLES",
+    "DESCRIBE TABLE events",
+    "DESC events",
+    "EXPLAIN PLAN SELECT 1",
+    "EXISTS TABLE events",
+  ])("allows the read statement %s", (sql) => {
+    expect(isReadOnlySQL(sql, clickhouse)).toBe(true);
+  });
+
+  it.each([
+    "INSERT INTO events VALUES (1)",
+    "ALTER TABLE events DELETE WHERE id = 1",
+    "DROP TABLE events",
+    "TRUNCATE TABLE events",
+    "OPTIMIZE TABLE events FINAL",
+    "SYSTEM RELOAD CONFIG",
+    "KILL QUERY WHERE query_id = 'x'",
+    "SET max_threads = 8",
+    "CREATE TABLE t (id UInt8) ENGINE = Memory",
+  ])("rejects the write/admin statement %s", (sql) => {
+    expect(isReadOnlySQL(sql, clickhouse)).toBe(false);
+  });
+
+  it("rejects table functions that reach outside the server's own tables", () => {
+    // file() reads the server filesystem and url()/s3() reach the network;
+    // neither is contained by the `readonly` setting.
+    expect(isReadOnlySQL("SELECT * FROM file('/etc/passwd', 'LineAsString')", clickhouse)).toBe(
+      false
+    );
+    expect(isReadOnlySQL("SELECT * FROM url('http://evil/x', 'JSONEachRow')", clickhouse)).toBe(
+      false
+    );
+    expect(isReadOnlySQL("SELECT * FROM s3Cluster('c', 'http://b/k')", clickhouse)).toBe(false);
+  });
+
+  it("still allows same-fleet and ordinary reads that merely look similar", () => {
+    // remote()/cluster() read other nodes of the same deployment and are
+    // routine in sharded setups.
+    expect(isReadOnlySQL("SELECT * FROM remote('other', system.one)", clickhouse)).toBe(true);
+    expect(isReadOnlySQL("SELECT * FROM cluster('c', system.one)", clickhouse)).toBe(true);
+    // Columns and functions whose names merely start with a hatch name.
+    expect(isReadOnlySQL("SELECT url_path, file_size FROM assets", clickhouse)).toBe(true);
+    expect(isReadOnlySQL("SELECT urlHash(u) FROM assets", clickhouse)).toBe(true);
+  });
+
+  it("allows the merge() table function, which is a read despite the keyword", () => {
+    // ClickHouse has no MERGE statement; merge() reads across tables.
+    expect(
+      isReadOnlySQL("WITH x AS (SELECT 1) SELECT * FROM merge(currentDatabase(), '^ev_')", clickhouse)
+    ).toBe(true);
+  });
+
+  it("rejects a write hidden in a CTE", () => {
+    expect(
+      isReadOnlySQL("WITH x AS (SELECT 1) SELECT * FROM t; DROP TABLE t", clickhouse)
+    ).toBe(false);
+  });
+
+  it("rejects a statement stacked after a # comment", () => {
+    // ClickHouse honours `#` line comments, so the splitter must too — an
+    // un-split batch would hand the DROP straight to the engine.
+    expect(
+      areAllStatementsReadOnly("SELECT 1 # note\n;DROP TABLE events", clickhouse)
+    ).toBe(false);
+  });
+});
+
+describe("ClickHouse mutating keywords inside a CTE", () => {
+  it.each(["ATTACH", "DETACH", "UNDROP", "INSERT", "ALTER"])(
+    "rejects %s hidden after a WITH",
+    (keyword) => {
+      expect(
+        isReadOnlySQL(`WITH x AS (SELECT 1) SELECT 1 ${keyword} TABLE t`, "clickhouse")
+      ).toBe(false);
+    }
+  );
+});

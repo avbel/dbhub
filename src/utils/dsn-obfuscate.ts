@@ -191,7 +191,8 @@ function protocolToConnectorType(protocol: string): ConnectorType | undefined {
     'mysql': 'mysql',
     'mariadb': 'mariadb',
     'sqlserver': 'sqlserver',
-    'sqlite': 'sqlite'
+    'sqlite': 'sqlite',
+    'clickhouse': 'clickhouse'
   };
   return mapping[protocol];
 }
@@ -208,6 +209,9 @@ export function getDefaultPortForType(type: ConnectorType): number | undefined {
     'mariadb': 3306,
     'sqlserver': 1433,
     'sqlite': undefined,
+    // ClickHouse HTTP interface; the TLS port (8443) is applied by the
+    // connector's DSN parser when the DSN asks for a secure connection.
+    'clickhouse': 8123,
   };
   return ports[type];
 }

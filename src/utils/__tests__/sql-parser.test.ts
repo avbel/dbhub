@@ -652,3 +652,69 @@ describe("blankCommentsAndStrings", () => {
     expect(result).not.toContain("fake union");
   });
 });
+
+describe("ClickHouse dialect", () => {
+  it("strips # and #! line comments", () => {
+    // ClickHouse accepts both alongside the ANSI `--` form.
+    expect(stripCommentsAndStrings("SELECT 1 # note", "clickhouse").trim()).toBe("SELECT 1");
+    expect(stripCommentsAndStrings("SELECT 1 #! note", "clickhouse").trim()).toBe("SELECT 1");
+  });
+
+  it("does not split on a ; hidden inside a # comment", () => {
+    // The engine would see one statement; so must the classifier.
+    expect(splitSQLStatements("SELECT 1 # note; DROP TABLE t", "clickhouse")).toEqual([
+      "SELECT 1 # note; DROP TABLE t",
+    ]);
+  });
+
+  it("still splits a real batch", () => {
+    expect(splitSQLStatements("SELECT 1; SELECT 2", "clickhouse")).toEqual([
+      "SELECT 1",
+      "SELECT 2",
+    ]);
+  });
+
+  it("honours backslash escapes inside string literals", () => {
+    // A scanner that only understands '' doubling ends the literal at \' and
+    // would then treat the following ; as a statement separator.
+    expect(splitSQLStatements("SELECT 'it\\'s'; SELECT 2", "clickhouse")).toEqual([
+      "SELECT 'it\\'s'",
+      "SELECT 2",
+    ]);
+  });
+
+  it("honours '' doubling inside string literals too", () => {
+    expect(splitSQLStatements("SELECT 'it''s; not two'", "clickhouse")).toEqual([
+      "SELECT 'it''s; not two'",
+    ]);
+  });
+
+  it("treats backticks as quoted identifiers", () => {
+    expect(splitSQLStatements("SELECT `we;ird` FROM t", "clickhouse")).toEqual([
+      "SELECT `we;ird` FROM t",
+    ]);
+  });
+
+  it("treats -- as a comment without requiring trailing whitespace", () => {
+    // Unlike MySQL, ClickHouse always starts a comment at `--`.
+    expect(splitSQLStatements("SELECT 1--1;DROP TABLE t", "clickhouse")).toEqual([
+      "SELECT 1--1;DROP TABLE t",
+    ]);
+  });
+});
+
+describe("ClickHouse blanking preserves length", () => {
+  // blankCommentsAndStrings is length-preserving by contract — callers do index
+  // math against the blanked string. The backslash-aware scanner advances two
+  // characters at a time, so an escape at the very end must not overshoot.
+  it.each([
+    "SELECT 'it\\'s'; SELECT 2",
+    "SELECT 1 # comment\nSELECT 2",
+    "SELECT `a;b` FROM t",
+    "SELECT 'unterminated",
+    "SELECT 'trailing backslash \\",
+    "SELECT /* unterminated",
+  ])("keeps the same length for %j", (sql) => {
+    expect(blankCommentsAndStrings(sql, "clickhouse")).toHaveLength(sql.length);
+  });
+});

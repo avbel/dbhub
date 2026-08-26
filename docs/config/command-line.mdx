@@ -211,6 +211,27 @@ This page covers command-line flags and environment variables. For TOML configur
       </Note>
     </Tab>
 
+    <Tab title="ClickHouse">
+      ```bash
+      # Format: clickhouse://[user]:[password]@[host]:[port]/[database]?[options]
+      clickhouse://default:password@localhost:8123/analytics
+
+      # TLS (port defaults to 8443 when the DSN omits it)
+      clickhouse://reader:password@ch.example.com:8443/analytics?secure=true
+      ```
+
+      <Note>
+        DBHub connects over ClickHouse's **HTTP interface** (8123, or 8443 for
+        TLS), not the native TCP protocol. A DSN pointing at the native ports
+        `9000` or `9440` is rejected at startup with the HTTP port to use
+        instead, rather than failing later as an unexplained connection hang.
+
+        The DSN must name a database. ClickHouse databases are the schema
+        concept, and naming one scopes object discovery to it instead of
+        fanning out across every database on the server.
+      </Note>
+    </Tab>
+
     <Tab title="SQLite">
       ```bash
       # Format: sqlite:///[path/to/database.db] or sqlite:///:memory:
@@ -231,7 +252,8 @@ This page covers command-line flags and environment variables. For TOML configur
 
   | Parameter | Databases | Description | Example |
   |-----------|-----------|-------------|---------|
-  | `sslmode` | PostgreSQL, MySQL, MariaDB, SQL Server | SSL mode: `disable`, `require`, `verify-ca`, `verify-full` | `?sslmode=require` |
+  | `sslmode` | PostgreSQL, MySQL, MariaDB, SQL Server, ClickHouse | SSL mode: `disable`, `require`, `verify-ca`, `verify-full` | `?sslmode=require` |
+  | `secure` | ClickHouse | Use TLS (`true`/`false`); `sslmode` takes precedence when both are set | `?secure=true` |
   | `sslrootcert` | PostgreSQL | CA certificate path (requires `verify-ca` or `verify-full`) | `?sslrootcert=~/.ssl/ca.pem` |
   | `instanceName` | SQL Server | Named instance | `?instanceName=SQLEXPRESS` |
   | `authentication` | SQL Server | Auth method: `ntlm`, `azure-active-directory-access-token` | `?authentication=ntlm` |

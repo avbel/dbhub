@@ -206,6 +206,43 @@ dsn = "postgres://postgres:postgres@localhost:5432/myapp"
 # sslmode = "require"
 
 # ============================================================================
+# CLICKHOUSE (Analytics / OLAP)
+# ============================================================================
+#
+# DBHub connects over ClickHouse's HTTP interface (8123, or 8443 for TLS), not
+# the native TCP protocol. A DSN naming the native ports 9000 or 9440 is
+# rejected at startup with the HTTP port to use instead.
+#
+# The DSN must name a database: ClickHouse databases are the schema concept,
+# and naming one scopes object discovery to it.
+
+# [[sources]]
+# id = "local_clickhouse"
+# dsn = "clickhouse://default:password@localhost:8123/analytics"
+
+# ClickHouse over TLS (ClickHouse Cloud, or any HTTPS endpoint)
+# [[sources]]
+# id = "ch_cloud"
+# dsn = "clickhouse://reader:password@abc123.eu-central-1.aws.clickhouse.cloud:8443/analytics?secure=true"
+# query_timeout = 60   # Enforced server-side via max_execution_time
+
+# ClickHouse behind a self-signed certificate (TLS without cert verification)
+# [[sources]]
+# id = "ch_selfsigned"
+# dsn = "clickhouse://reader:password@ch.internal:8443/analytics?sslmode=require"
+
+# ClickHouse - Individual parameters (use when the password has special characters)
+# [[sources]]
+# id = "ch_params"
+# type = "clickhouse"
+# host = "ch.internal"
+# port = 8123
+# database = "analytics"
+# user = "reader"
+# password = "p@ss:word/123"
+# sslmode = "disable"
+
+# ============================================================================
 # SQLITE (Local file or in-memory)
 # ============================================================================
 
@@ -366,9 +403,12 @@ dsn = "postgres://postgres:postgres@localhost:5432/myapp"
 #   MariaDB:     mariadb://user:pass@host:3306/database
 #   SQL Server:  sqlserver://user:pass@host:1433/database
 #   SQLite:      sqlite:///path/to/file.db  or  sqlite:///:memory:
+#   ClickHouse:  clickhouse://user:pass@host:8123/database?secure=true
 #
 # Default Ports:
 #   PostgreSQL: 5432 | MySQL/MariaDB: 3306 | SQL Server: 1433
+#   ClickHouse: 8123 (HTTP) / 8443 (HTTPS). The native protocol ports
+#               9000 and 9440 are not supported and are rejected at startup.
 #
 # SSH Tunnel Options:
 #   ssh_host, ssh_port (default: 22), ssh_user
@@ -392,6 +432,8 @@ dsn = "postgres://postgres:postgres@localhost:5432/myapp"
 #
 # Tool Options:
 #   readonly = true    # Restrict to SELECT, SHOW, DESCRIBE, EXPLAIN (works for execute_sql and custom tools)
+#                      # ClickHouse additionally sets the engine-level `readonly = 2`
+#                      # session setting, since it has no read-only transactions
 #   max_rows = 1000    # Limit result set size (works for execute_sql and custom tools)
 #   explain_sql        # Opt-in tool (name = "explain_sql"); no readonly/max_rows options - always safe
 #   health_check       # Opt-in tool (name = "health_check"); PostgreSQL/MySQL/MariaDB/SQL Server for now, always safe
@@ -401,3 +443,5 @@ dsn = "postgres://postgres:postgres@localhost:5432/myapp"
 #   MySQL/MariaDB:  ?, ?, ?
 #   SQL Server:     @p1, @p2, @p3
 #   SQLite:         ?, ?, ?
+#   ClickHouse:     {name: Type}, e.g. {id: UInt32} - values bind to the
+#                   distinct placeholders in order of first appearance

@@ -171,6 +171,10 @@ Sources define database connections. Each source represents a database that DBHu
       [[sources]]
       id = "local"
       dsn = "sqlite:///./dev.db"
+
+      [[sources]]
+      id = "analytics"
+      dsn = "clickhouse://reader:pass@ch.example.com:8443/events?secure=true"
       ```
     </Tab>
 

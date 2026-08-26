@@ -127,6 +127,26 @@ The same tool pattern works across different databases, just adjust the paramete
     ```
   </Tab>
 
+  <Tab title="ClickHouse">
+    ```toml
+    [[tools]]
+    name = "get_product"
+    description = "Get product by ID"
+    source = "clickhouse_db"
+    statement = "SELECT * FROM products WHERE id = {product_id: UInt32}"
+
+    [[tools.parameters]]
+    name = "product_id"
+    type = "integer"
+    description = "Product ID"
+    ```
+
+    ClickHouse placeholders are named, but values are still supplied as a list:
+    the Nth **distinct** placeholder, in order of first appearance, takes the
+    Nth declared parameter. Declare `[[tools.parameters]]` in the order the
+    placeholders appear in the statement.
+  </Tab>
+
   <Tab title="SQL Server">
     ```toml
     [[tools]]

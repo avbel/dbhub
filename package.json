@@ -2,7 +2,7 @@
   "name": "dbhub",
   "version": "1.2.1",
   "mcpName": "io.github.bytebase/dbhub",
-  "description": "Minimal, token-efficient Database MCP Server for PostgreSQL, MySQL, SQL Server, SQLite, MariaDB",
+  "description": "Minimal, token-efficient Database MCP Server for PostgreSQL, MySQL, SQL Server, SQLite, MariaDB, ClickHouse",
   "repository": {
     "type": "git",
     "url": "https://github.com/bytebase/dbhub.git"
@@ -58,6 +58,7 @@
     "@aws-sdk/credential-providers": "^3.1001.0",
     "@aws-sdk/rds-signer": "^3.1001.0",
     "@azure/identity": "^4.8.0",
+    "@clickhouse/client": "^1.23.1",
     "mariadb": "^3.4.0",
     "mssql": "^11.0.1",
     "mysql2": "^3.13.0",
@@ -66,6 +67,7 @@
   "devDependencies": {
     "@anthropic-ai/mcpb": "^2.1.2",
     "@modelcontextprotocol/client": "^2.0.0",
+    "@testcontainers/clickhouse": "^11.14.0",
     "@testcontainers/mariadb": "^11.0.3",
     "@testcontainers/mssqlserver": "^11.0.3",
     "@testcontainers/mysql": "^11.0.3",

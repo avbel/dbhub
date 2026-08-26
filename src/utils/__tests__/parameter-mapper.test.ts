@@ -5,6 +5,7 @@ import {
   countParameters,
   validateParameters,
   mapArgumentsToArray,
+  extractBracedParameterNames,
 } from "../parameter-mapper.js";
 import type { ParameterConfig } from "../../types/config.js";
 
@@ -344,5 +345,65 @@ describe("Parameter Mapper", () => {
       const result = mapArgumentsToArray(params, args);
       expect(result).toEqual([123, null]);
     });
+  });
+});
+
+describe("ClickHouse braced parameters", () => {
+  it("detects the {name: Type} style only for ClickHouse", () => {
+    const sql = "SELECT * FROM t WHERE id = {id: UInt32}";
+    expect(detectParameterStyle(sql, "clickhouse")).toBe("braced");
+    // Other dialects must keep their existing detection untouched.
+    expect(detectParameterStyle(sql)).toBe("none");
+    expect(detectParameterStyle(sql, "postgres")).toBe("none");
+  });
+
+  it("counts distinct placeholder names, not occurrences", () => {
+    const sql = "SELECT * FROM t WHERE a = {v: UInt32} OR b = {v: UInt32} OR c = {w: String}";
+    expect(countParameters(sql, "clickhouse")).toBe(2);
+  });
+
+  it("returns the names in first-appearance order", () => {
+    const sql = "SELECT {b: String}, {a: UInt8}, {b: String}";
+    expect(extractBracedParameterNames(sql)).toEqual(["b", "a"]);
+  });
+
+  it("handles parameterised types containing their own parentheses", () => {
+    const sql = "SELECT {ids: Array(UInt32)}, {ts: Nullable(DateTime64(3))}";
+    expect(extractBracedParameterNames(sql)).toEqual(["ids", "ts"]);
+  });
+
+  it("ignores placeholders inside comments and string literals", () => {
+    expect(extractBracedParameterNames("SELECT '{a: UInt8}' -- {b: UInt8}")).toEqual([]);
+  });
+
+  it("accepts a statement with no parameters", () => {
+    expect(detectParameterStyle("SELECT 1", "clickhouse")).toBe("none");
+    expect(() => validateParameterStyle("SELECT 1", "clickhouse")).not.toThrow();
+  });
+
+  it("rejects another dialect's placeholder style", () => {
+    expect(() => validateParameterStyle("SELECT * FROM t WHERE id = $1", "clickhouse")).toThrow(
+      /Expected braced style/
+    );
+  });
+
+  it("validates the declared parameter count against the statement", () => {
+    const sql = "SELECT * FROM t WHERE id = {id: UInt32}";
+    expect(() =>
+      validateParameters(sql, [{ name: "id", type: "integer" }], "clickhouse")
+    ).not.toThrow();
+    expect(() => validateParameters(sql, [], "clickhouse")).toThrow(/Parameter count mismatch/);
+  });
+});
+
+describe("ClickHouse placeholder detection edge cases", () => {
+  it("does not mistake the ternary operator for a positional placeholder", () => {
+    // ClickHouse supports `cond ? a : b`, so a bare `?` is ordinary SQL.
+    expect(detectParameterStyle("SELECT x > 0 ? 'pos' : 'neg' FROM t", "clickhouse")).toBe("none");
+  });
+
+  it("still flags an unmistakably foreign placeholder", () => {
+    expect(detectParameterStyle("SELECT * FROM t WHERE id = $1", "clickhouse")).toBe("numbered");
+    expect(detectParameterStyle("SELECT * FROM t WHERE id = @p1", "clickhouse")).toBe("named");
   });
 });

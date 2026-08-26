@@ -138,6 +138,46 @@ function scanBracketQuotedIdentifier(sql: string, i: number): SQLToken | null {
   return { type: TokenType.QuotedBlock, end: j };
 }
 
+/**
+ * ClickHouse single-line comment introduced by `#` or `#!`. ClickHouse's lexer
+ * accepts both alongside the ANSI `--` form, so a `;` hidden after a `#` must
+ * not be treated as a statement separator by splitSQLStatements.
+ */
+function scanHashLineComment(sql: string, i: number): SQLToken | null {
+  if (sql[i] !== "#") { return null; }
+  let j = i;
+  while (j < sql.length && sql[j] !== "\n") { j++; }
+  return { type: TokenType.Comment, end: j };
+}
+
+/**
+ * Quoted block that honours BOTH doubling (`''`) and backslash escapes
+ * (`\'`). ClickHouse accepts either inside string literals and quoted
+ * identifiers; a scanner that only understands doubling terminates `'it\'s'`
+ * one character early, which would then mis-split a `;` that follows.
+ */
+function scanBackslashEscapedQuoted(sql: string, i: number, quote: string): SQLToken | null {
+  if (sql[i] !== quote) { return null; }
+  let j = i + 1;
+  while (j < sql.length) {
+    if (sql[j] === "\\") { j += 2; }
+    else if (sql[j] === quote && sql[j + 1] === quote) { j += 2; }
+    else if (sql[j] === quote) { j++; break; }
+    else { j++; }
+  }
+  return { type: TokenType.QuotedBlock, end: Math.min(j, sql.length) };
+}
+
+function scanTokenClickHouse(sql: string, i: number): SQLToken {
+  return scanSingleLineComment(sql, i)
+    ?? scanHashLineComment(sql, i)
+    ?? scanMultiLineComment(sql, i)
+    ?? scanBackslashEscapedQuoted(sql, i, "'")
+    ?? scanBackslashEscapedQuoted(sql, i, '"')
+    ?? scanBackslashEscapedQuoted(sql, i, "`")
+    ?? plainToken(i);
+}
+
 function scanTokenAnsi(sql: string, i: number): SQLToken {
   return scanSingleLineComment(sql, i)
     ?? scanMultiLineComment(sql, i)
@@ -191,6 +231,7 @@ const dialectScanners: Record<ConnectorType, TokenScanner> = {
   mariadb: scanTokenMySQL,
   sqlite: scanTokenSQLite,
   sqlserver: scanTokenSQLServer,
+  clickhouse: scanTokenClickHouse,
 };
 
 function getScanner(dialect?: ConnectorType): TokenScanner {

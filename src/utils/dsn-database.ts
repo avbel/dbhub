@@ -23,11 +23,18 @@ export class MissingDatabaseError extends Error {
  * database on the server. Multi-database setups belong in a TOML config with
  * one source per database.
  *
- * @param database  Database component extracted from the DSN (may be empty)
- * @param dsn       Original DSN, used to build an obfuscated error message
- * @param label     Human-readable connector name, e.g. "MySQL"
+ * @param database    Database component extracted from the DSN (may be empty)
+ * @param dsn         Original DSN, used to build an obfuscated error message
+ * @param label       Human-readable connector name, e.g. "MySQL"
+ * @param examplePort Port shown in the "add the database" hint, so the example
+ *                    matches the connector the user is actually configuring
  */
-export function requireDatabaseInDSN(database: string, dsn: string, label: string): void {
+export function requireDatabaseInDSN(
+  database: string,
+  dsn: string,
+  label: string,
+  examplePort = 3306
+): void {
   if (database) {
     return;
   }
@@ -35,7 +42,7 @@ export function requireDatabaseInDSN(database: string, dsn: string, label: strin
   throw new MissingDatabaseError(
     `${label} DSN must name a database.\n` +
       `Provided: ${obfuscateDSNPassword(dsn)}\n` +
-      `Add the database to the DSN, e.g. ...:3306/mydb\n` +
+      `Add the database to the DSN, e.g. ...:${examplePort}/mydb\n` +
       `To work with several databases, define one [[sources]] entry per ` +
       `database in a TOML config file: https://dbhub.ai/config/toml`
   );

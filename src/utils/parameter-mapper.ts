@@ -16,7 +16,33 @@ export const PARAMETER_STYLES = {
   mariadb: "positional", // ?, ?, ?
   sqlserver: "named", // @p1, @p2, @p3
   sqlite: "positional", // ?, ?, ?
+  clickhouse: "braced", // {name: Type}
 } as const;
+
+/**
+ * ClickHouse placeholder: `{name: Type}`, where Type is any ClickHouse type
+ * expression (`String`, `Array(UInt32)`, `Nullable(DateTime64(3))`, ...).
+ * Anchored on an identifier followed by `:` so ordinary brace usage in other
+ * dialects can never match — this pattern is only ever consulted for ClickHouse.
+ */
+const bracedParameterPattern = /\{\s*([A-Za-z_]\w*)\s*:\s*[A-Za-z_][^}]*\}/g;
+
+/**
+ * Extract ClickHouse placeholder names in order of first appearance, without
+ * duplicates. This order is the contract that maps the positional
+ * `parameters` array handed to `executeSQL` onto ClickHouse's named
+ * `query_params` object: the Nth distinct placeholder takes the Nth value.
+ */
+export function extractBracedParameterNames(statement: string): string[] {
+  const cleanedSQL = stripCommentsAndStrings(statement);
+  const names: string[] = [];
+  for (const match of cleanedSQL.matchAll(bracedParameterPattern)) {
+    if (!names.includes(match[1])) {
+      names.push(match[1]);
+    }
+  }
+  return names;
+}
 
 /**
  * Detect the parameter style used in a SQL statement.
@@ -25,10 +51,31 @@ export const PARAMETER_STYLES = {
  * @returns The detected parameter style
  */
 export function detectParameterStyle(
-  statement: string
-): "numbered" | "positional" | "named" | "none" {
+  statement: string,
+  connectorType?: ConnectorType
+): "numbered" | "positional" | "named" | "braced" | "none" {
   // Strip comments and strings to avoid matching parameters inside them
   const cleanedSQL = stripCommentsAndStrings(statement);
+
+  // ClickHouse is checked separately, and only for ClickHouse: `{name: Type}`
+  // is the sole placeholder form there, and confining the check this way keeps
+  // every other dialect's detection byte-for-byte unchanged.
+  if (connectorType === "clickhouse") {
+    if (extractBracedParameterNames(statement).length > 0) {
+      return "braced";
+    }
+    // No ClickHouse placeholder. Still name an unmistakably foreign one so the
+    // mismatch surfaces when the tool is configured rather than at run time.
+    // A bare `?` is deliberately NOT checked: ClickHouse has a ternary
+    // conditional operator (`cond ? a : b`), so `?` is ordinary SQL here.
+    if (/\$\d+/.test(cleanedSQL)) {
+      return "numbered";
+    }
+    if (/@p\d+/.test(cleanedSQL)) {
+      return "named";
+    }
+    return "none";
+  }
 
   // Check for PostgreSQL-style numbered parameters ($1, $2, etc.)
   if (/\$\d+/.test(cleanedSQL)) {
@@ -58,7 +105,7 @@ export function validateParameterStyle(
   statement: string,
   connectorType: ConnectorType
 ): void {
-  const detectedStyle = detectParameterStyle(statement);
+  const detectedStyle = detectParameterStyle(statement, connectorType);
   const expectedStyle = PARAMETER_STYLES[connectorType];
 
   if (detectedStyle === "none") {
@@ -71,6 +118,7 @@ export function validateParameterStyle(
       numbered: "$1, $2, $3",
       positional: "?, ?, ?",
       named: "@p1, @p2, @p3",
+      braced: "{id: UInt32}, {name: String}",
     };
 
     throw new Error(
@@ -88,12 +136,17 @@ export function validateParameterStyle(
  * @returns Number of parameter placeholders required (highest index for numbered/named)
  * @throws Error if numbered/named parameters are not sequential starting from 1
  */
-export function countParameters(statement: string): number {
-  const style = detectParameterStyle(statement);
+export function countParameters(statement: string, connectorType?: ConnectorType): number {
+  const style = detectParameterStyle(statement, connectorType);
   // Strip comments and strings to avoid matching parameters inside them
   const cleanedSQL = stripCommentsAndStrings(statement);
 
   switch (style) {
+    case "braced": {
+      // Distinct names, not occurrences: ClickHouse placeholders are named, so
+      // repeating `{id: UInt32}` twice still binds a single value.
+      return extractBracedParameterNames(statement).length;
+    }
     case "numbered": {
       // Extract all $N parameters and get unique indices
       const matches = cleanedSQL.match(/\$\d+/g);
@@ -158,7 +211,7 @@ export function validateParameters(
   // Validate parameter style matches connector
   validateParameterStyle(statement, connectorType);
 
-  const paramCount = countParameters(statement);
+  const paramCount = countParameters(statement, connectorType);
   const definedCount = parameters?.length || 0;
 
   if (paramCount !== definedCount) {

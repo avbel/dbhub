@@ -24,6 +24,7 @@ export default defineConfig({
     'mysql2',
     'mariadb',
     'mssql',
+    '@clickhouse/client',
     '@aws-sdk/credential-providers',
     '@aws-sdk/rds-signer',
     '@azure/identity',

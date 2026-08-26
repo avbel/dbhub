@@ -12,7 +12,7 @@ on:
     branches: [main]
 
 env:
-  IMAGE_NAME: bytebase/dbhub
+  IMAGE_NAME: avbel/dbhub
 
 jobs:
   build-and-push:

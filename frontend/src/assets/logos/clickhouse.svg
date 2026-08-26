@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 8" role="img" aria-label="ClickHouse">
+  <g fill="#FFCC00">
+    <rect x="0" y="0" width="1" height="8" rx="0.1"/>
+    <rect x="2" y="0" width="1" height="8" rx="0.1"/>
+    <rect x="4" y="0" width="1" height="8" rx="0.1"/>
+    <rect x="6" y="0" width="1" height="8" rx="0.1"/>
+    <rect x="8" y="3.25" width="1" height="1.5" rx="0.1"/>
+  </g>
+</svg>

@@ -35,6 +35,8 @@
             |                  |    |              |    |                  |
             |  Copilot CLI     +--->+              +--->+    MariaDB       |
             |                  |    |              |    |                  |
+            |                  |    |              +--->+    ClickHouse    |
+            |                  |    |              |    |                  |
             |                  |    |              |    |                  |
             +------------------+    +--------------+    +------------------+
                  MCP Clients           MCP Server             Databases
@@ -43,7 +45,7 @@
 DBHub is a minimal MCP server: token-efficient, zero-dependency, and just two tools by default with opt-in extras. This lightweight gateway allows MCP-compatible clients to connect to and explore different databases:
 
 - **Minimal**: Zero dependency, token efficient with a minimal set of MCP tools to maximize context window
-- **Multi-Database**: PostgreSQL, MySQL, MariaDB, SQL Server, and SQLite through a single interface
+- **Multi-Database**: PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, and ClickHouse through a single interface
 - **Multi-Connection**: Connect to multiple databases simultaneously with TOML configuration
 - **Guardrails**: Read-only mode, row limiting, and query timeout to prevent runaway operations
 - **Secure Access**: SSH tunneling and SSL/TLS encryption
@@ -69,7 +71,68 @@ DBHub loads just 2 tools by default at **1.4k tokens** — 13-14x fewer than alt
 
 ## Supported Databases
 
-PostgreSQL, MySQL, SQL Server, MariaDB, and SQLite.
+PostgreSQL, MySQL, SQL Server, MariaDB, SQLite, and ClickHouse.
+
+### ClickHouse
+
+DBHub connects over ClickHouse's **HTTP interface** — port `8123`, or `8443` for
+TLS. The native TCP ports (`9000`, `9440`) are not supported and are rejected at
+startup with the HTTP port to use instead. The DSN must name a database:
+ClickHouse databases are the schema concept, and naming one scopes object
+discovery to it.
+
+Single source, straight from the command line:
+
+```bash
+npx @bytebase/dbhub@latest --transport http --port 8080 \
+  --dsn "clickhouse://default:password@localhost:8123/analytics"
+```
+
+Read-only, with a row cap — the usual shape for handing an analytics cluster to
+an agent (`dbhub.toml`):
+
+```toml
+[[sources]]
+id = "analytics"
+description = "ClickHouse events cluster"
+dsn = "clickhouse://reader:password@ch.example.com:8443/events?secure=true"
+query_timeout = 60          # Enforced server-side via max_execution_time
+
+[[tools]]
+name = "execute_sql"
+source = "analytics"
+readonly = true             # Also sets the engine-level `readonly = 2` session setting
+max_rows = 1000
+
+[[tools]]
+name = "search_objects"
+source = "analytics"
+```
+
+Connection options:
+
+| Form | Meaning |
+|------|---------|
+| `?secure=true` | TLS; the port defaults to `8443` when the DSN omits one |
+| `?sslmode=require` | TLS **without** certificate verification (self-signed certs) |
+| `?sslmode=disable` | Plain HTTP, even on port 8443 |
+| Individual params | Use `type = "clickhouse"` with `host`/`port`/`database`/`user`/`password` when the password contains `@`, `:`, or `/` |
+
+Notes specific to this engine:
+
+- **Read-only is enforced by the engine**, not just the SQL classifier: ClickHouse
+  has no transactions, so read-only statements run with the session setting
+  `readonly = 2`, which rejects DML *and* DDL. If the connected account's own
+  profile already pins `readonly`, DBHub leaves it alone.
+- **`Decimal` and 64-bit integers are returned as strings**, so token amounts,
+  prices, and `UInt256` balances survive intact instead of being rounded through
+  a JavaScript double.
+- **`search_objects` reports what ClickHouse actually has**: the primary key
+  (marked non-unique — ClickHouse enforces no uniqueness), the sorting key when
+  it differs, and data-skipping indices. There are no stored procedures, so the
+  `function` object type reports user-defined functions instead.
+- **Batches are not atomic.** With no transactions, a multi-statement batch runs
+  one statement at a time; if the third fails, the first two have applied.
 
 ## MCP Tools
 

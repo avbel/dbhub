@@ -6,6 +6,7 @@ import { PostgresConnector } from '../postgres/index.js';
 import { MySQLConnector } from '../mysql/index.js';
 import { MariaDBConnector } from '../mariadb/index.js';
 import { SQLServerConnector } from '../sqlserver/index.js';
+import { ClickHouseConnector } from '../clickhouse/index.js';
 
 describe('DSN Parser - PostgreSQL SSL Modes', () => {
   const connector = new PostgresConnector();
@@ -313,5 +314,127 @@ describe('DSN Parser - missing database component', () => {
       const config = await parser.parse(`${scheme}://user:pass@localhost:3306/mydb`);
       expect(config.database).toBe('mydb');
     });
+  });
+});
+
+describe('DSN Parser - ClickHouse', () => {
+  const parser = new ClickHouseConnector().dsnParser;
+
+  it('accepts only the clickhouse:// scheme', () => {
+    expect(parser.isValidDSN('clickhouse://user:pass@localhost:8123/db')).toBe(true);
+    // http:// belongs to no connector in particular; claiming it would make
+    // getConnectorForDSN ambiguous.
+    expect(parser.isValidDSN('http://user:pass@localhost:8123/db')).toBe(false);
+    expect(parser.isValidDSN('mysql://user:pass@localhost:3306/db')).toBe(false);
+    expect(parser.isValidDSN('not-a-dsn')).toBe(false);
+  });
+
+  it('maps a plain DSN onto the HTTP interface', async () => {
+    const config = await parser.parse('clickhouse://reader:secret@ch.internal:8123/analytics');
+    expect(config.url).toBe('http://ch.internal:8123');
+    expect(config.username).toBe('reader');
+    expect(config.password).toBe('secret');
+    expect(config.database).toBe('analytics');
+    expect(config.rejectUnauthorized).toBe(true);
+  });
+
+  it('defaults the port to 8123, or 8443 when TLS is requested', async () => {
+    expect((await parser.parse('clickhouse://u:p@host/db')).url).toBe('http://host:8123');
+    expect((await parser.parse('clickhouse://u:p@host/db?secure=true')).url).toBe(
+      'https://host:8443'
+    );
+  });
+
+  it('defaults the username to ClickHouse\'s own default', async () => {
+    const config = await parser.parse('clickhouse://host:8123/db');
+    expect(config.username).toBe('default');
+  });
+
+  it('infers TLS from the 8443 port', async () => {
+    const config = await parser.parse('clickhouse://u:p@host:8443/db');
+    expect(config.url).toBe('https://host:8443');
+  });
+
+  it('honours sslmode ahead of the port', async () => {
+    expect((await parser.parse('clickhouse://u:p@host:8443/db?sslmode=disable')).url).toBe(
+      'http://host:8443'
+    );
+
+    const insecure = await parser.parse('clickhouse://u:p@host:8123/db?sslmode=require');
+    expect(insecure.url).toBe('https://host:8123');
+    // "require" is DBHub-wide shorthand for TLS without certificate verification.
+    expect(insecure.rejectUnauthorized).toBe(false);
+
+    const verified = await parser.parse('clickhouse://u:p@host:8123/db?sslmode=verify-full');
+    expect(verified.url).toBe('https://host:8123');
+    expect(verified.rejectUnauthorized).toBe(true);
+  });
+
+  it.each([
+    { port: 9000, suggested: 8123 },
+    { port: 9440, suggested: 8443 },
+  ])('rejects the native protocol port $port with the HTTP port to use', async ({ port, suggested }) => {
+    // The client speaks HTTP(S) only, so a native-protocol port would fail as
+    // an opaque socket hang rather than a configuration mistake.
+    await expect(parser.parse(`clickhouse://u:p@host:${port}/db`)).rejects.toThrow(
+      new RegExp(`native TCP protocol[\\s\\S]*port ${suggested}`)
+    );
+  });
+
+  it('requires the DSN to name a database', async () => {
+    await expect(parser.parse('clickhouse://u:p@host:8123/')).rejects.toThrow(
+      'ClickHouse DSN must name a database'
+    );
+    // The hint should show a ClickHouse port, not MySQL's.
+    await expect(parser.parse('clickhouse://u:p@host:8123/')).rejects.toThrow(/\.\.\.:8123\/mydb/);
+  });
+
+  it('does not leak the password in error messages', async () => {
+    await expect(parser.parse('clickhouse://u:hunter2@host:8123/')).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining('hunter2') })
+    );
+    await expect(parser.parse('clickhouse://u:hunter2@host:9000/db')).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining('hunter2') })
+    );
+  });
+
+  it('derives the request timeout from the configured timeouts', async () => {
+    expect((await parser.parse('clickhouse://u:p@host:8123/db')).requestTimeoutMs).toBeUndefined();
+
+    // The socket deadline sits just past max_execution_time so the server wins
+    // the race and returns a proper timeout error.
+    const withQuery = await parser.parse('clickhouse://u:p@host:8123/db', {
+      queryTimeoutSeconds: 30,
+    });
+    expect(withQuery.requestTimeoutMs).toBe(32000);
+
+    const withBoth = await parser.parse('clickhouse://u:p@host:8123/db', {
+      connectionTimeoutSeconds: 60,
+      queryTimeoutSeconds: 30,
+    });
+    expect(withBoth.requestTimeoutMs).toBe(60000);
+  });
+
+  it('never lets a short connection timeout cap how long a query may run', async () => {
+    // HTTP has no separate connect phase to bound, so connection_timeout can
+    // only raise the ceiling. Without the floor, `connection_timeout = 5` would
+    // silently abort every query after five seconds.
+    const shortConnect = await parser.parse('clickhouse://u:p@host:8123/db', {
+      connectionTimeoutSeconds: 5,
+    });
+    expect(shortConnect.requestTimeoutMs).toBe(30000);
+
+    // A long query budget still wins over the floor.
+    const longQuery = await parser.parse('clickhouse://u:p@host:8123/db', {
+      connectionTimeoutSeconds: 5,
+      queryTimeoutSeconds: 300,
+    });
+    expect(longQuery.requestTimeoutMs).toBe(302000);
+  });
+
+  it('keeps a password containing @ intact', async () => {
+    const config = await parser.parse('clickhouse://user:p%40ss@host:8123/db');
+    expect(config.password).toBe('p@ss');
+    expect(config.url).toBe('http://host:8123');
   });
 });

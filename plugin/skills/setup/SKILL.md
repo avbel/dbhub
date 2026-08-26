@@ -12,6 +12,7 @@ The database connection string (DSN) is entered in the plugin's configuration di
    - PostgreSQL: `postgres://user:password@localhost:5432/dbname`
    - MySQL: `mysql://user:password@localhost:3306/dbname`
    - MariaDB: `mariadb://user:password@localhost:3306/dbname`
+   - ClickHouse: `clickhouse://user:password@localhost:8123/dbname` (HTTP interface; append `?secure=true` for TLS)
    - SQL Server: `sqlserver://user:password@localhost:1433/dbname`
    - SQLite: `sqlite:///absolute/path/to/database.db` (no credentials)
 

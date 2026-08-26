@@ -34,6 +34,10 @@ const AUTH_CODES: Record<ConnectorType, ReadonlyArray<string | number>> = {
   mariadb: ["ER_ACCESS_DENIED_ERROR", 1045, 1698],
   sqlserver: ["ELOGIN"],
   sqlite: [], // no network/auth layer
+  // @clickhouse/client surfaces server errors as ClickHouseError with a
+  // stringified numeric `code`: 516 AUTHENTICATION_FAILED, 497 ACCESS_DENIED,
+  // 192 UNKNOWN_USER, 193 WRONG_PASSWORD.
+  clickhouse: ["516", "497", "192", "193"],
 };
 
 function unreachableMessage(sourceId: string): string {

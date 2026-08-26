@@ -14,6 +14,11 @@ export const allowedKeywords: Record<ConnectorType, string[]> = {
   // SQL Server has no native EXPLAIN statement; the connector translates a
   // leading `EXPLAIN` into a SET SHOWPLAN_XML request (see SQLServerConnector).
   sqlserver: ["select", "with", "explain"],
+  // ClickHouse: EXISTS is a statement (`EXISTS TABLE t` returns 0/1), not just
+  // an operator, so it leads a read-only statement here. `SYSTEM` and `CHECK`
+  // are deliberately absent - the former is administrative, the latter can run
+  // for hours over a whole table.
+  clickhouse: ["select", "with", "explain", "show", "describe", "desc", "exists"],
 };
 
 /**
@@ -110,6 +115,45 @@ export const sqlServerPassThroughPattern = new RegExp(
 );
 
 /**
+ * ClickHouse table functions that read from outside the server's own tables:
+ * the local filesystem, arbitrary URLs, object stores, and foreign databases.
+ * A read-only ClickHouse user can still call these from a plain SELECT, so
+ * `SELECT * FROM file('/etc/passwd', 'LineAsString')` would otherwise pass the
+ * read-only classifier untouched.
+ *
+ * `remote()` / `cluster()` are deliberately absent: they read from other nodes
+ * of the same ClickHouse deployment and are routine in sharded setups, so
+ * treating them as an escape hatch would break ordinary distributed reads.
+ *
+ * The `*Cluster` variants are listed explicitly because the shared pattern
+ * anchors on `\bname\s*\(` — `s3` does not match `s3Cluster(`.
+ */
+export const clickHouseExternalSourceFunctions = [
+  "file",
+  "filecluster",
+  "url",
+  "urlcluster",
+  "s3",
+  "s3cluster",
+  "gcs",
+  "hdfs",
+  "hdfscluster",
+  "azureblobstorage",
+  "azureblobstoragecluster",
+  "executable",
+  "jdbc",
+  "odbc",
+  "mysql",
+  "postgresql",
+  "mongodb",
+  "redis",
+  "sqlite",
+  "deltalake",
+  "iceberg",
+  "hudi",
+] as const;
+
+/**
  * Functions callable from a plain SELECT that reach beyond ordinary data
  * access and are NOT contained by a read-only transaction, because they are
  * gated by privilege rather than transaction mode. Matched in call position
@@ -139,6 +183,7 @@ export const escapeHatchFunctionKeywords: Partial<Record<ConnectorType, readonly
   mariadb: ["load_file", "get_lock", "release_lock", "release_all_locks"],
   postgres: ["pg_read_file", "pg_read_binary_file", "pg_ls_dir"],
   sqlserver: sqlServerPassThroughKeywords,
+  clickhouse: clickHouseExternalSourceFunctions,
 };
 
 const escapeHatchFunctionPatterns: Partial<Record<ConnectorType, RegExp>> = Object.fromEntries(
@@ -169,6 +214,17 @@ const mutatingPatternSqlServer = new RegExp(
   "i",
 );
 
+/**
+ * ClickHouse has no MERGE statement, but it does have a `merge()` table
+ * function (`SELECT * FROM merge(currentDatabase(), '^events_')`) that reads
+ * across tables. Keeping "merge" in the mutating pattern would reject that
+ * legitimate read inside a WITH, so drop it for this dialect only.
+ */
+const mutatingPatternClickHouse = new RegExp(
+  `\\b(?:${mutatingKeywords.filter((keyword) => keyword !== "merge").join("|")}|attach|detach|undrop)\\b`,
+  "i",
+);
+
 /** Per-dialect mutating keyword pattern */
 const mutatingPatterns: Record<ConnectorType, RegExp> = {
   postgres: mutatingPattern,
@@ -176,6 +232,7 @@ const mutatingPatterns: Record<ConnectorType, RegExp> = {
   mariadb: mutatingPatternWithReplace,
   sqlite: mutatingPatternWithReplace,
   sqlserver: mutatingPatternSqlServer,
+  clickhouse: mutatingPatternClickHouse,
 };
 
 const selectIntoPattern = /\bselect\b[\s\S]+\binto\b/i;
