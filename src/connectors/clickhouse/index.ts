@@ -38,6 +38,13 @@ const DEFAULT_HTTP_PORT = 8123;
 const DEFAULT_HTTPS_PORT = 8443;
 
 /**
+ * DSN schemes that address a ClickHouse server. `http`/`https` are here because
+ * DBHub talks to ClickHouse over the HTTP interface, so a plain endpoint URL is
+ * already a complete DSN — see the DSN parser's doc comment.
+ */
+const DSN_SCHEMES = ["clickhouse://", "http://", "https://"];
+
+/**
  * ClickHouse's native TCP protocol ports. `@clickhouse/client` speaks HTTP(S)
  * only, so a DSN pointing at one of these can never connect — it would fail as
  * an opaque socket hang rather than as a configuration mistake. Fail fast with
@@ -89,10 +96,17 @@ export interface ClickHouseConnectionConfig {
  *   clickhouse://user:password@localhost:8123/dbname
  *   clickhouse://user:password@host:8443/dbname?secure=true
  *   clickhouse://user:password@host:8123/dbname?sslmode=disable
+ *   http://user:password@localhost:8123/dbname
+ *   https://user:password@abc123.eu-central-1.aws.clickhouse.cloud:8443/dbname
+ *
+ * `http`/`https` are accepted alongside `clickhouse` because ClickHouse is
+ * spoken over its HTTP interface: the endpoint URL that ClickHouse Cloud and
+ * container deployments hand out *is* the DSN, so it can be pasted verbatim.
  *
  * TLS is selected by, in order of precedence: an explicit `sslmode`, an
- * explicit `secure`, then the port (8443 implies TLS). `sslmode=require`
- * matches the rest of DBHub: TLS without certificate verification.
+ * explicit `secure`, the DSN scheme (`https` implies TLS, `http` implies none),
+ * then the port (8443 implies TLS). `sslmode=require` matches the rest of
+ * DBHub: TLS without certificate verification.
  */
 class ClickHouseDSNParser implements DSNParser {
   async parse(dsn: string, config?: ConnectorConfig): Promise<ClickHouseConnectionConfig> {
@@ -150,11 +164,11 @@ class ClickHouseDSNParser implements DSNParser {
   }
 
   isValidDSN(dsn: string): boolean {
-    return typeof dsn === "string" && dsn.startsWith("clickhouse://");
+    return typeof dsn === "string" && DSN_SCHEMES.some((scheme) => dsn.startsWith(scheme));
   }
 }
 
-/** Decide TLS from sslmode, then secure, then the port. */
+/** Decide TLS from sslmode, then secure, then the DSN scheme, then the port. */
 function resolveTLSMode(
   url: SafeURL,
   explicitPort: number | undefined
@@ -173,6 +187,15 @@ function resolveTLSMode(
   if (secureParam !== null) {
     const secure = secureParam === "true" || secureParam === "1";
     return { secure, rejectUnauthorized: true };
+  }
+
+  // An http/https DSN states the transport outright, so it outranks the port
+  // heuristic that a scheme-less `clickhouse://` DSN has to fall back on.
+  if (url.protocol === "https:") {
+    return { secure: true, rejectUnauthorized: true };
+  }
+  if (url.protocol === "http:") {
+    return { secure: false, rejectUnauthorized: true };
   }
 
   return { secure: explicitPort === DEFAULT_HTTPS_PORT, rejectUnauthorized: true };

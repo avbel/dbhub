@@ -320,13 +320,51 @@ describe('DSN Parser - missing database component', () => {
 describe('DSN Parser - ClickHouse', () => {
   const parser = new ClickHouseConnector().dsnParser;
 
-  it('accepts only the clickhouse:// scheme', () => {
+  it('accepts the clickhouse://, http:// and https:// schemes', () => {
     expect(parser.isValidDSN('clickhouse://user:pass@localhost:8123/db')).toBe(true);
-    // http:// belongs to no connector in particular; claiming it would make
-    // getConnectorForDSN ambiguous.
-    expect(parser.isValidDSN('http://user:pass@localhost:8123/db')).toBe(false);
+    // DBHub reaches ClickHouse over its HTTP interface, so the endpoint URL a
+    // deployment hands out is already a usable DSN. No other connector claims
+    // http(s), so getConnectorForDSN stays unambiguous.
+    expect(parser.isValidDSN('http://user:pass@localhost:8123/db')).toBe(true);
+    expect(parser.isValidDSN('https://user:pass@host:8443/db')).toBe(true);
     expect(parser.isValidDSN('mysql://user:pass@localhost:3306/db')).toBe(false);
     expect(parser.isValidDSN('not-a-dsn')).toBe(false);
+  });
+
+  it('parses an http:// endpoint URL as a ClickHouse DSN', async () => {
+    const config = await parser.parse('http://reader:secret@ch.internal:8123/analytics');
+    expect(config.url).toBe('http://ch.internal:8123');
+    expect(config.username).toBe('reader');
+    expect(config.password).toBe('secret');
+    expect(config.database).toBe('analytics');
+    expect(config.rejectUnauthorized).toBe(true);
+  });
+
+  it('takes TLS from the scheme rather than the port', async () => {
+    // https on ClickHouse's plain-HTTP port, and http on its TLS port: the
+    // scheme is explicit, so it wins over the 8443 heuristic.
+    expect((await parser.parse('https://u:p@host:8123/db')).url).toBe('https://host:8123');
+    expect((await parser.parse('http://u:p@host:8443/db')).url).toBe('http://host:8443');
+  });
+
+  it('defaults the port from the scheme when none is given', async () => {
+    expect((await parser.parse('http://u:p@host/db')).url).toBe('http://host:8123');
+    expect((await parser.parse('https://u:p@host/db')).url).toBe('https://host:8443');
+  });
+
+  it('lets sslmode override the scheme', async () => {
+    const config = await parser.parse('https://u:p@host:8443/db?sslmode=require');
+    expect(config.url).toBe('https://host:8443');
+    expect(config.rejectUnauthorized).toBe(false);
+    expect((await parser.parse('https://u:p@host:8443/db?sslmode=disable')).url).toBe(
+      'http://host:8443'
+    );
+  });
+
+  it('rejects native protocol ports on an http:// DSN too', async () => {
+    await expect(parser.parse('http://u:p@host:9000/db')).rejects.toThrow(
+      /native TCP protocol/
+    );
   });
 
   it('maps a plain DSN onto the HTTP interface', async () => {

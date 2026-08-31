@@ -215,6 +215,9 @@ dsn = "postgres://postgres:postgres@localhost:5432/myapp"
 #
 # The DSN must name a database: ClickHouse databases are the schema concept,
 # and naming one scopes object discovery to it.
+#
+# Because the transport is HTTP, an http:// or https:// endpoint URL is itself a
+# valid ClickHouse DSN (the scheme decides TLS, so https:// needs no secure=true).
 
 # [[sources]]
 # id = "local_clickhouse"
@@ -404,6 +407,8 @@ dsn = "postgres://postgres:postgres@localhost:5432/myapp"
 #   SQL Server:  sqlserver://user:pass@host:1433/database
 #   SQLite:      sqlite:///path/to/file.db  or  sqlite:///:memory:
 #   ClickHouse:  clickhouse://user:pass@host:8123/database?secure=true
+#                (or an endpoint URL: http://user:pass@host:8123/database,
+#                 https://user:pass@host:8443/database)
 #
 # Default Ports:
 #   PostgreSQL: 5432 | MySQL/MariaDB: 3306 | SQL Server: 1433

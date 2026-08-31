@@ -174,7 +174,7 @@ outside TOML and follow the same order:
   - SQL Server (named instance): `sqlserver://user:password@localhost:1433/dbname?instanceName=ENV1`
   - SQL Server (NTLM): `sqlserver://user:password@localhost:1433/dbname?authentication=ntlm&domain=MYDOMAIN`
   - SQLite: `sqlite:///path/to/database.db` or `sqlite:///:memory:`
-  - ClickHouse: `clickhouse://user:password@localhost:8123/dbname` (HTTP interface only — the native protocol ports 9000/9440 are rejected with an explanatory error; append `?secure=true` or `?sslmode=require` for TLS)
+  - ClickHouse: `clickhouse://user:password@localhost:8123/dbname` (HTTP interface only — the native protocol ports 9000/9440 are rejected with an explanatory error; append `?secure=true` or `?sslmode=require` for TLS). `http://` and `https://` DSNs are also routed to ClickHouse, since the endpoint URL is the DSN; the scheme then decides TLS ahead of the port heuristic. Scheme acceptance lives in `ClickHouseDSNParser.isValidDSN` (`DSN_SCHEMES`) and the protocol→type map in `resolveSourceConfigs` (`src/config/env.ts`).
 - SSL modes: `sslmode=disable` (no SSL), `sslmode=require` (SSL without cert verification), `sslmode=verify-ca` (PostgreSQL only, CA verification), `sslmode=verify-full` (PostgreSQL only, CA + hostname verification). Use `sslrootcert` to specify CA certificate path for verify modes.
 
 ## Testing Approach

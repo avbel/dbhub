@@ -81,6 +81,11 @@ startup with the HTTP port to use instead. The DSN must name a database:
 ClickHouse databases are the schema concept, and naming one scopes object
 discovery to it.
 
+Because the transport *is* HTTP, an `http://` or `https://` endpoint URL is
+accepted as a ClickHouse DSN in its own right — paste the URL a ClickHouse Cloud
+service or container hands out, no `clickhouse://` rewrite needed. The scheme
+also decides TLS on its own, so `https://` needs no `?secure=true`.
+
 Single source, straight from the command line:
 
 ```bash

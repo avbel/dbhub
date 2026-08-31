@@ -353,6 +353,21 @@ describe('Environment Configuration Tests', () => {
       expect(result!.sources[0].type).toBe('postgres');
       expect(result!.sources[0].dsn).toBe('postgres://user:my@pass:word@localhost:5432/testdb');
     });
+
+    // DBHub reaches ClickHouse over its HTTP interface, so a plain endpoint URL
+    // is a complete ClickHouse DSN and must resolve to the clickhouse type.
+    it.each(['http://default:pass@localhost:8123/analytics', 'https://default:pass@ch.cloud:8443/analytics'])(
+      'should resolve %s to the clickhouse type',
+      async (dsn) => {
+        process.argv = ['node', 'script.js', `--dsn=${dsn}`];
+
+        const result = await import('../env.js').then(m => m.resolveSourceConfigs());
+
+        expect(result!.sources).toHaveLength(1);
+        expect(result!.sources[0].type).toBe('clickhouse');
+        expect(result!.sources[0].dsn).toBe(dsn);
+      }
+    );
   });
 
   describe('resolveId', () => {

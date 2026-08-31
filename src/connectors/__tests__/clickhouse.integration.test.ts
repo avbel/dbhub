@@ -8,9 +8,10 @@ class ClickHouseTestContainer implements TestContainer {
   constructor(private container: StartedClickHouseContainer) {}
 
   /**
-   * The container hands back an `http://` URL; DBHub addresses ClickHouse by
-   * the `clickhouse://` scheme (see ClickHouseDSNParser.isValidDSN), so the
-   * scheme is swapped here. Host, port, credentials and database are unchanged.
+   * The container hands back an `http://` URL, which DBHub accepts as-is; the
+   * swap to the canonical `clickhouse://` scheme keeps this suite exercising
+   * the scheme most deployments configure. Host, port, credentials and database
+   * are unchanged. Both schemes are covered in dsn-parser.test.ts.
    */
   getConnectionUri(): string {
     return this.container.getConnectionUrl().replace(/^https?:\/\//, 'clickhouse://');

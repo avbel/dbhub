@@ -787,7 +787,9 @@ export async function resolveSourceConfigs(): Promise<{ sources: SourceConfig[];
       dbType = 'sqlserver';
     } else if (protocol === 'sqlite') {
       dbType = 'sqlite';
-    } else if (protocol === 'clickhouse') {
+    } else if (protocol === 'clickhouse' || protocol === 'http' || protocol === 'https') {
+      // ClickHouse is addressed over its HTTP interface, so a plain http(s)
+      // endpoint URL is a valid ClickHouse DSN - see ClickHouseDSNParser.
       dbType = 'clickhouse';
     } else {
       throw new Error(`Unsupported database type in DSN: ${protocol}`);
